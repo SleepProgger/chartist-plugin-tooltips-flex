@@ -225,7 +225,7 @@
           // and add new
           for(var i=0; i < highlightsToAdd.length; ++i){             
             highlightsToAdd[i].classList.add(options.tooltipHighlightPointClass);
-            old_sel_points.push(node);
+            old_sel_points.push(highlightsToAdd[i]);
           }
         }
       }
@@ -263,6 +263,7 @@
           
           series = [];
           var series_data = chart.data.series;
+          console.log(chart);
           for(var i=0; i < series_data.length; ++i){
             var series_name = series_data[i].className;
             // We are (ab)using the points here. Alternatively we could use the lines values.
