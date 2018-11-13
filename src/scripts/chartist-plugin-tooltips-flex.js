@@ -1,5 +1,5 @@
 /**
- * Chartist.js plugin to display a data label on top of the points in a line chart.
+ * Chartist.js plugin to display a tooltip when hovering (or clickin) the chart.
  *
  */
 /* global Chartist */
@@ -13,25 +13,32 @@
     },
     tooltipTooltipClass: 'chartist-tooltip-flex',
     tooltipMarkerClass: 'chartist-tooltip-flex-marker',
+    /* Function to merge the two found nearest points.
+     * Can be one of: nearest, left, right
+     * Or a function. See comment over merge_functions. */
     tooltipMergeFnc: 'nearest',
+    /* Function to create/update the tooltip content.
+     * function fn(series, tooltip)...
+     *  series contains {name: seriesname, value: value choosen by tooltipMergeFnc} for each series in the graph.
+     *  If the return value is not null set it as textContent. tooltip can be used to update html.
+     *  this is the options object so the format functions can be used in custom display functions. */
     tooltipDisplayFnc: default_tooltip_display,
+    /* Adds the tooltipHighlightPointClass to each point returned by the merge function if set. */
+    tooltipHighlightPoint: true,
     tooltipHighlightPointClass: 'ct-tooltip-point-hit',
-    
+    /* Experimental feature which pins the tooltip to the max y of the graph at the mouse x position. */
     tooltipFollowMaxLine: false,
     tooltipTooltipYDist: 15,
-    
+    /* Format function for x values. Used by the default tooltipMergeFnc */
     tooltipFormatX: Chartist.noop,
+    /* Format function for y values. Used by the default tooltipMergeFnc */
     tooltipFormatY: Chartist.noop,
-    tooltipNameFormat: Chartist.noop,
-    tooltipMergeX: function(x_values){ return x_values[0] }
+    /* Format function for series names. Used by the default tooltipMergeFnc */
+    tooltipNameFormat: function(x){ return x.name },
+    /* Format function to select which x value is shown. Parameter is an array of all x values. Used by the default tooltipMergeFnc */
+    tooltipMergeXSeries: function(x_values){ return x_values[0] }
   };
 
-  // Helper function. TODO: unused atm
-  function remove_childs(node){    
-    while (node.firstChild) {
-      node.removeChild(node.firstChild);
-    }
-  }
   
   /*
    * "Borrowed" from https://stackoverflow.com/a/29018745/4830897
@@ -100,9 +107,9 @@
     var text = "";
     for(var i=0; i < series.length; ++i){
       x_vals.push(series[i].value.x);
-      text += series[i].name + ": " + this.tooltipFormatX(series[i].value.y) + "\n";
+      text += this.tooltipNameFormat(series[i]) + ": " + this.tooltipFormatX(series[i].value.y) + "\n";
     }
-    text = this.tooltipFormatY(this.tooltipMergeX(x_vals)) + "\n" + text;
+    text = this.tooltipFormatY(this.tooltipMergeXSeries(x_vals)) + "\n" + text;
     return text;
   }
   
@@ -118,7 +125,6 @@
       var tooltip = document.body.querySelector('.chartist-tooltip-flex');
       var marker = null;
       var width = 0, height = 0;
-      console.log("Chart:", chart);
     
       var series = [];
       var created = false;
@@ -131,15 +137,14 @@
       if(!tooltip){
         tooltip = document.createElement('div');
         tooltip.className = options.tooltipTooltipClass;
-        // Fallback CSS so its at least visible
+        // Fallback CSS so its at least visible without the css file.
         tooltip.style.position = 'absolute';
         tooltip.style.whiteSpace = 'pre';
+        tooltip.style.top = '0';
         document.body.append(tooltip);
       }
       
-      
       function get_nearest_points(elements, point){
-        // TODO: we could remember the last found index and start from there the next time to increase search performance when moving the mouse over the graph.
         var i = binarySearch(elements.raw_x, point, function(a,b){
           if(a > b) return 1;
           if(a < b) return -1;
@@ -161,39 +166,23 @@
         marker.addClass('tooltip-show');
         _tooltip_visible = true;
       }
-      // TODO: onclick for mobiles ?
-      chart_container.addEventListener('mouseenter', function (event) {
-        _show_tooltip();
-      });
-      chart_container.addEventListener('mouseleave', function (event) {
-        tooltip.classList.remove('tooltip-show');
-        marker.removeClass('tooltip-show');
-      });
-      
-      var last_x = -1;
-      chart_container.addEventListener('mousemove', function (event) {
-        if(!created) return;
-        if(last_x === event.pageX){ //TODO: add min difference ?
-          return;
-        }
+            
+      var rafQueued = false;
+      var last_event = null;
+      function update(){
+        rafQueued = false;
         if(!_tooltip_visible) _show_tooltip();
-        last_x = event.pageX;
         // getBoundingClientRect call required in case the graph position changes.
         // I'd really like to get rid of this, but then we'd need to have the tooltip relative to the graph.
-        // TODO: as graph container child or as foreign svg object ?
+        // TODO: as graph container child or as foreign svg object ? .. Still required to get the correct mouse_x ..
+        // TODO: try to cache it.. when to update ?
         var cont_box = chart.container.getBoundingClientRect();
         var left_border = cont_box.left + window.pageXOffset;
-        var mouse_x = event.pageX - left_border;
-        
-        // clean up old highlights
-        // TODO: Only do if required  
-        for(var i=0; i < old_sel_points.length; ++i){
-          old_sel_points[i].classList.remove(options.tooltipHighlightPointClass);
-        }
-        old_sel_points = [];
+        var mouse_x = last_event.pageX - left_border;
         
         var values = [];
         var vals_y = [];
+        var highlightsToAdd = [];
         for(var i=0; i < series.length; ++i){
           var points = get_nearest_points(series[i], mouse_x);
           points = tooltipMergeFnc(points[0], points[1], mouse_x)
@@ -201,36 +190,71 @@
           var pToHighlight = points[0];
           for(var j=0; j < pToHighlight.length; ++j){
             var node = pToHighlight[j].getNode();
-            vals_y.push(node.getAttribute('y1'));            
-            node.classList.add(options.tooltipHighlightPointClass);
-            old_sel_points.push(node);
+            highlightsToAdd.push(node);
+            vals_y.push(node.getAttribute('y1'));
           }
         }
         
-        // TODO: Use left instead ?
-        marker._node.setAttribute('transform', 'translate('+mouse_x+' 0)');
         var ret = options.tooltipDisplayFnc(values, tooltip);
         if(ret){
           tooltip.textContent = ret;          
         }
         height = tooltip.offsetHeight;
         width = tooltip.offsetWidth;
-        var offsetX = - width / 2 + options.tooltipOffset.x
-
-        var y = event.pageY;
+        var offsetX = - width / 2 + options.tooltipOffset.x;
+        var y = last_event.pageY;
         if(options.tooltipFollowMaxLine){
           y = Math.min.apply(Math, vals_y) + cont_box.top + window.pageYOffset - options.tooltipTooltipYDist;
         }
         var offsetY = - height + options.tooltipOffset.y;
-        tooltip.style.top = y + offsetY + 'px';
-        tooltip.style.left = event.pageX + offsetX + 'px';        
+        
+        /*
+        * Try to do all the dom changing at once to limit relayouts.
+        */
+        //tooltip.style.top = y + offsetY + 'px';
+        //tooltip.style.left = event.pageX + offsetX + 'px';
+        // Not really sure this one is faster
+        tooltip.style.transform = 'translate(' + (last_event.pageX + offsetX) + 'px, ' + (y + offsetY) + 'px)';
+        marker.getNode().setAttribute('transform', 'translate('+mouse_x+' 0)');
+        if(options.tooltipHighlightPoint){          
+          // clean up old highlights
+          for(var i=0; i < old_sel_points.length; ++i){
+            old_sel_points[i].classList.remove(options.tooltipHighlightPointClass);
+          }
+          old_sel_points = [];
+          // and add new
+          for(var i=0; i < highlightsToAdd.length; ++i){             
+            highlightsToAdd[i].classList.add(options.tooltipHighlightPointClass);
+            old_sel_points.push(node);
+          }
+        }
+      }
+      
+      
+      chart_container.addEventListener('mouseenter', function (event) {
+        _show_tooltip();
       });
       
+      chart_container.addEventListener('mouseleave', function (event) {
+        tooltip.classList.remove('tooltip-show');
+        marker.removeClass('tooltip-show');
+      });
+      
+      chart_container.addEventListener('mousemove', function (event) {
+        if(!created) return;
+        last_event = event;
+        // Not really sure the requstAnimationFrame stuff is helping here.
+        // It might on slow devices
+        if(rafQueued){
+          return;
+        }
+        rafQueued = true;
+        requestAnimationFrame(update);
+      });
       
       
       if (chart instanceof Chartist.Line) {
         chart.on('created', function(data) {
-          console.log(data);
           var grid = chart.svg.querySelector('.ct-grids');
           var grid_box = grid.getNode().getBoundingClientRect();
           var cont_box = chart.container.getBoundingClientRect();

@@ -1,6 +1,6 @@
 {
-  "name": "chartist-plugin-pointlabels",
-  "version": "0.0.4",
+  "name": "chartist-plugin-tooltips-flex",
+  "version": "0.0.1",
   "main": [
     "./dist/chartist-plugin-pointlabels.min.js"
   ],

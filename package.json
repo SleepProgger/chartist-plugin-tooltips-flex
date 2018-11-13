@@ -1,9 +1,9 @@
 {
   "name": "chartist-plugin-tooltips-flex",
-  "description": "Point Labels Plugin for Chartist.js",
-  "version": "0.0.6",
-  "author": "Gion Kunz",
-  "homepage": "https://gionkunz.github.io/chartist-plugin-pointlabels",
+  "description": "Tooltip Plugin for Chartist.js",
+  "version": "0.0.1",
+  "author": "SleepProgger",
+  "homepage": "",
   "repository": {
     "type": "git",
     "url": "https://github.com/SleepProgger/chartist-plugin-tooltips-flex.git"
@@ -26,7 +26,7 @@
   "licenses": [
     {
       "type": "WTFPL",
-      "url": "https://github.com/gionkunz/chartist-plugin-pointlabels/blob/master/LICENSE"
+      "url": "https://github.com/SleepProgger/chartist-plugin-tooltips-flex/blob/master/LICENSE"
     }
   ],
   "dependencies": {},
@@ -52,7 +52,7 @@
     "test": "grunt test"
   },
   "config": {
-    "banner": "/* chartist-plugin-pointlabels <%= pkg.version %>\n * Copyright © <%= year %> Gion Kunz\n * Free to use under the WTFPL license.\n * http://www.wtfpl.net/\n */\n",
+    "banner": "/* chartist-plugin-tooltips-flex <%= pkg.version %>\n * Copyright © <%= year %> SleepProgger\n * Free to use under the WTFPL license.\n * http://www.wtfpl.net/\n */\n",
     "src": "src",
     "dist": "dist",
     "tmp": ".tmp",
