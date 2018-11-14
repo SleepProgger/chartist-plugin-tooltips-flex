@@ -9,10 +9,11 @@
   var defaultOptions = {
     tooltipOffset: {
       x: 0,
-      y: 0
+      y: -15
     },
     tooltipTooltipClass: 'chartist-tooltip-flex',
     tooltipMarkerClass: 'chartist-tooltip-flex-marker',
+    tooltipMarkerY: false,
     /* Function to merge the two found nearest points.
      * Can be one of: nearest, left, right
      * Or a function. See comment over merge_functions. */
@@ -124,6 +125,7 @@
       var chart_container = chart.container;
       var tooltip = document.body.querySelector('.chartist-tooltip-flex');
       var marker = null;
+      var marker_y = null;
       var width = 0, height = 0;
     
       var series = [];
@@ -161,12 +163,6 @@
       }
       
       var _tooltip_visible = false;
-      function _show_tooltip(){
-        tooltip.classList.add('tooltip-show');
-        marker.addClass('tooltip-show');
-        _tooltip_visible = true;
-      }
-            
       var rafQueued = false;
       var last_event = null;
       function update(){
@@ -179,6 +175,10 @@
         var cont_box = chart.container.getBoundingClientRect();
         var left_border = cont_box.left + window.pageXOffset;
         var mouse_x = last_event.pageX - left_border;
+        var mouse_y = null;
+        if(options.tooltipMarkerY){
+          mouse_y = last_event.pageY - (cont_box.top + window.pageYOffset);
+        }
         
         var values = [];
         var vals_y = [];
@@ -216,6 +216,10 @@
         // Not really sure this one is faster
         tooltip.style.transform = 'translate(' + (last_event.pageX + offsetX) + 'px, ' + (y + offsetY) + 'px)';
         marker.getNode().setAttribute('transform', 'translate('+mouse_x+' 0)');
+        if(options.tooltipMarkerY){
+          //mouse_y = Math.min.apply(Math, vals_y); // + cont_box.top + window.pageYOffset;
+          marker_y.getNode().setAttribute('transform', 'translate(0 '+mouse_y+')');
+        }
         if(options.tooltipHighlightPoint){          
           // clean up old highlights
           for(var i=0; i < old_sel_points.length; ++i){
@@ -231,6 +235,14 @@
       }
       
       
+      function _show_tooltip(){
+        tooltip.classList.add('tooltip-show');
+        marker.addClass('tooltip-show');
+        if(options.tooltipMarkerY){
+          marker_y.addClass('tooltip-show');
+        }
+        _tooltip_visible = true;
+      }
       chart_container.addEventListener('mouseenter', function (event) {
         _show_tooltip();
       });
@@ -238,6 +250,9 @@
       chart_container.addEventListener('mouseleave', function (event) {
         tooltip.classList.remove('tooltip-show');
         marker.removeClass('tooltip-show');
+        if(options.tooltipMarkerY){
+          marker_y.removeClass('tooltip-show');
+        }
       });
       
       chart_container.addEventListener('mousemove', function (event) {
@@ -260,6 +275,10 @@
           var cont_box = chart.container.getBoundingClientRect();
           var top_padding = grid_box.top - cont_box.top;
           marker = chart.svg.elem('line', {x1: 0, y1: top_padding, x2: 0, y2: grid_box.height + top_padding, style: options.tooltipMarkerClass}, options.tooltipMarkerClass );
+          if(options.tooltipMarkerY){            
+            var left_padding = grid_box.left - cont_box.left;
+            marker_y = chart.svg.elem('line', {x1: left_padding, y1: 0, x2: grid_box.width + left_padding, y2: 0, style: options.tooltipMarkerClass}, options.tooltipMarkerClass );
+          }
           
           series = [];
           var series_data = chart.data.series;

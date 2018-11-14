@@ -16,6 +16,8 @@
     -moz-transition: opacity .2s linear;
     -o-transition: opacity .2s linear;
     transition: opacity .2s linear;
+    /* In case you need a fixed tooltip try this */
+    /* transform: translate(0, 0) !important; */
 }
 .chartist-tooltip-flex:before {
     content: "";
@@ -46,8 +48,5 @@
     stroke-width: 10px;
     opacity: 1 !important
 }
-
-/*.ct-area, .ct-line {
-    pointer-events: none; }*/
 
 /*# sourceMappingURL=chartist-plugin-tooltips-flex.css.map */

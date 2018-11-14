@@ -63,6 +63,7 @@ var chart = new Chartist.Line('.ct-chart', {
 ## Limitations and requirements
 
 - Series need to have a name attribute.
-- Series data need to be in the {x:.., y:..} format (might tget fixed some day).
+- Series data need to be in the {x:.., y:..} format (might get fixed some day).
 - Chartists showPoint option need to be true. Hide the points via CSS if required.
 - This plugin isn't stable yet (and maybe never will). Options and functionality might change.
+- Does not work when data is updated (probably). Should be an easy fix tho.
