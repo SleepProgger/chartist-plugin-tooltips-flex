@@ -33,14 +33,22 @@
       markerClass: 'chartist-tooltip-flex-marker',
       markerY: false,
       /* Function to merge the two found nearest points.
-       * Can be one of: nearest, left, right
-       * Or a function. See comment over merge_functions. */
+       * Can be one of: nearest, left, right, interpolate
+       * Or a function. See comment over merge_functions.
+       * Warning: interpolate doesn't properly work with lineSmooth: true. (TODO)
+       * */
       mergeFnc: 'nearest',
       /* Function to create/update the tooltip content.
        * function fn(series, tooltip)...
        *  series contains {name: seriesname, value: value choosen by tooltipMergeFnc} for each series in the graph.
        *  If the return value is not null set it as textContent. tooltip can be used to update html.
-       *  this is the options object so the format functions can be used in custom display functions. */
+       *  this is the plguin object which provides:
+       *    options           : The option object
+       *    merge_functions   : Object containing all build in merge function
+       *    unProjectX(value) : Transforms x data value to svg position
+       *    unProjectY(value) : Transforms y data value to svg position
+       *    project(value)    : Transforms x svg position to x data value 
+       */
       displayFnc: default_tooltip_display,
       /* Adds the tooltipHighlightPointClass to each point returned by the merge function if set. */
       highlightPoint: true,
@@ -68,7 +76,9 @@
         x_vals.push(series[i].value.x);
         text += this.options.formatName(series[i].series.data) + ": " + this.options.formatY(series[i].value.y) + "\n";
       }
-      text = this.options.formatX(this.options.mergeXSeriesFnc(x_vals)) + "\n" + text;
+      var x_text = this.options.formatX(this.options.mergeXSeriesFnc(x_vals));
+      if(x_text)
+        text = x_text + "\n" + text;
       return text;
     }
 
@@ -122,14 +132,10 @@
         options.displayFnc = options.displayFnc.bind(plugin);
         plugin.options = options;
 
-        /* TODO: update docs
-         * Merge functions get the two nearest points and should return
-         * SVG point elements (which can then be highlighted) and one value
-         * to show in the tooltip.
-         * Params: left, right = {svg:SVG point, data: Point object (Should be {x:.., y:...})}, point = mouse position relative to graph
-         * Returns: [ [svg points to add options.tooltipHighlightPointClass class to], data point]
+        /* 
+         * Merge functions get the two nearest points for a series and should return
+         * one point. One of left or right could be null.
          */
-        // TODO: use object instead of arrays as return value
         var merge_functions = plugin.merge_functions = {
             left: function(left, right, point){
               if(!left) left = right;
@@ -151,6 +157,7 @@
               if(!left) return right;
               if(!right) return left;
               point = project(point);
+              console.log("Point", point);
               var ns = (right.x - left.x);
               var ls = Math.abs(left.x - point) / ns;
               var rs = Math.abs(right.x - point) / ns;
@@ -161,12 +168,7 @@
             },
         }
 
-
-
         var width = 0, height = 0;    
-
-
-        var old_sel_points = [];
         var tooltipMergeFnc = options.mergeFnc;
         if(typeof tooltipMergeFnc !== "function"){
           tooltipMergeFnc = merge_functions[tooltipMergeFnc];
@@ -228,7 +230,6 @@
           tooltip.style.transform = 'translate(' + (last_event.pageX + offsetX) + 'px, ' + (last_event.pageY + offsetY) + 'px)';
           marker.getNode().setAttribute('transform', 'translate('+svg_pos.x+' 0)');
           if(options.markerY){
-            //mouse_y = Math.min.apply(Math, vals_y); // + cont_box.top + window.pageYOffset;
             marker_y.getNode().setAttribute('transform', 'translate(0 '+svg_pos.y+')');
           }
           if(options.highlightPoint){
@@ -279,7 +280,6 @@
             //console.log("DATA:", data);
             axis_x = data.axisX;
             axis_y = data.axisY;
-
             var svgElement = chart.svg.getNode();
             svg = svgElement.tagName === 'svg' ? svgElement : svgElement.ownerSVGElement;
 
@@ -310,7 +310,7 @@
                 d.point = elem.elem('line', {x1: 0, y1: 0, x2: 0.01, y2: 0}, chart.options.classNames.point + ' ' + options.highlightPointClass);
               }
               series.push(d);
-              //console.log(d);
+              console.log("series:", d);
             }
             created = true;
           });
@@ -332,7 +332,7 @@
         /*
          * Transforms x data value to svg position. 
          */
-        function unProjectX(value) {
+        var unProjectX = plugin.unProjectX = function (value) {
           var bounds = axis_x.bounds || axis_x.range;
           var max = bounds.max;
           var min = bounds.min;
@@ -343,7 +343,7 @@
         /*
          * Transforms y data value to svg position. 
          */
-        function unProjectY(value) {
+        var unProjectY = plugin.unProjectY = function(value) {
           var bounds = axis_y.bounds || axis_y.range;
           var max = bounds.max;
           var min = bounds.min;
@@ -354,12 +354,12 @@
         /*
          * Transforms x svg position to x data value.. 
          */
-        function project(value) {
+        var project = plugin.project = function(value) {
           var bounds = axis_x.bounds || axis_x.range;
           var max = bounds.max;
           var min = bounds.min;
           var range = bounds.range || (max - min);
-          return ((value - axis_x.chartRect.x1) * bounds.range / axis_x.axisLength) + min;
+          return ((value - axis_x.chartRect.x1) * range / axis_x.axisLength) + min;
         }
 
 

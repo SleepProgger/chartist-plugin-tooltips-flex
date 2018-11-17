@@ -26,7 +26,13 @@
      * function fn(series, tooltip)...
      *  series contains {name: seriesname, value: value choosen by tooltipMergeFnc} for each series in the graph.
      *  If the return value is not null set it as textContent. tooltip can be used to update html.
-     *  this is the options object so the format functions can be used in custom display functions. */
+     *  this is the plguin object which provides:
+     *    options           : The option object
+     *    merge_functions   : Object containing all build in merge function
+     *    unProjectX(value) : Transforms x data value to svg position
+     *    unProjectY(value) : Transforms y data value to svg position
+     *    project(value)    : Transforms x svg position to x data value 
+     */
     displayFnc: default_tooltip_display,
     /* Adds the tooltipHighlightPointClass to each point returned by the merge function if set. */
     highlightPoint: true,
@@ -257,7 +263,6 @@
           //console.log("DATA:", data);
           axis_x = data.axisX;
           axis_y = data.axisY;
-          
           var svgElement = chart.svg.getNode();
           svg = svgElement.tagName === 'svg' ? svgElement : svgElement.ownerSVGElement;
           
@@ -288,7 +293,7 @@
               d.point = elem.elem('line', {x1: 0, y1: 0, x2: 0.01, y2: 0}, chart.options.classNames.point + ' ' + options.highlightPointClass);
             }
             series.push(d);
-            //console.log(d);
+            //console.log("series:", d);
           }
           created = true;
         });
@@ -310,7 +315,7 @@
       /*
        * Transforms x data value to svg position. 
        */
-      function unProjectX(value) {
+      var unProjectX = plugin.unProjectX = function (value) {
         var bounds = axis_x.bounds || axis_x.range;
         var max = bounds.max;
         var min = bounds.min;
@@ -321,7 +326,7 @@
       /*
        * Transforms y data value to svg position. 
        */
-      function unProjectY(value) {
+      var unProjectY = plugin.unProjectY = function(value) {
         var bounds = axis_y.bounds || axis_y.range;
         var max = bounds.max;
         var min = bounds.min;
@@ -332,12 +337,12 @@
       /*
        * Transforms x svg position to x data value.. 
        */
-      function project(value) {
+      var project = plugin.project = function(value) {
         var bounds = axis_x.bounds || axis_x.range;
         var max = bounds.max;
         var min = bounds.min;
         var range = bounds.range || (max - min);
-        return ((value - axis_x.chartRect.x1) * bounds.range / axis_x.axisLength) + min;
+        return ((value - axis_x.chartRect.x1) * range / axis_x.axisLength) + min;
       }
       
       
