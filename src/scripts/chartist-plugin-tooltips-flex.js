@@ -1,6 +1,8 @@
 /**
  * Chartist.js plugin to display a tooltip when hovering (or clickin) the chart.
  *
+ * TODO: use position approach from zoom plugin instead of looping over points
+ * TODO: investigate performance issues with zoomed in flat data. Might be solved when switching to position apporach to translate from svg coords to view
  */
 /* global Chartist */
 (function(window, document, Chartist) {
@@ -11,35 +13,53 @@
       x: 0,
       y: -15
     },
-    tooltipTooltipClass: 'chartist-tooltip-flex',
-    tooltipMarkerClass: 'chartist-tooltip-flex-marker',
-    tooltipMarkerY: false,
+    tooltipClass: 'chartist-tooltip-flex',
+    markerClass: 'chartist-tooltip-flex-marker',
+    markerY: false,
     /* Function to merge the two found nearest points.
-     * Can be one of: nearest, left, right
-     * Or a function. See comment over merge_functions. */
-    tooltipMergeFnc: 'nearest',
+     * Can be one of: nearest, left, right, interpolate
+     * Or a function. See comment over merge_functions.
+     * Warning: interpolate doesn't properly work with lineSmooth: true. (TODO)
+     * */
+    mergeFnc: 'nearest',
     /* Function to create/update the tooltip content.
      * function fn(series, tooltip)...
      *  series contains {name: seriesname, value: value choosen by tooltipMergeFnc} for each series in the graph.
      *  If the return value is not null set it as textContent. tooltip can be used to update html.
      *  this is the options object so the format functions can be used in custom display functions. */
-    tooltipDisplayFnc: default_tooltip_display,
+    displayFnc: default_tooltip_display,
     /* Adds the tooltipHighlightPointClass to each point returned by the merge function if set. */
-    tooltipHighlightPoint: true,
-    tooltipHighlightPointClass: 'ct-tooltip-point-hit',
-    /* Experimental feature which pins the tooltip to the max y of the graph at the mouse x position. */
-    tooltipFollowMaxLine: false,
-    tooltipTooltipYDist: 15,
+    highlightPoint: true,
+    highlightPointClass: 'ct-tooltip-point-hit',
     /* Format function for x values. Used by the default tooltipMergeFnc */
-    tooltipFormatX: Chartist.noop,
+    formatX: Chartist.noop,
     /* Format function for y values. Used by the default tooltipMergeFnc */
-    tooltipFormatY: Chartist.noop,
+    formatY: Chartist.noop,
     /* Format function for series names. Used by the default tooltipMergeFnc */
-    tooltipNameFormat: function(x){ return x.name },
+    formatName: function(x){ var n=x.name; return n[0].toUpperCase() + n.substr(1) },
     /* Format function to select which x value is shown. Parameter is an array of all x values. Used by the default tooltipMergeFnc */
-    tooltipMergeXSeries: function(x_values){ return x_values[0] }
+    mergeXSeriesFnc: function(x_values){ return x_values[0] }
   };
 
+  
+  /*
+   * The default display function.
+   * If the return value != null use it as textContent (!) for the tooltip.
+   * Use the tooltip parameter if you want to write/update HTML.
+   */
+  function default_tooltip_display(series, tooltip){
+    var x_vals = [];
+    var text = "";
+    for(var i=0; i < series.length; ++i){
+      x_vals.push(series[i].value.x);
+      text += this.options.formatName(series[i].series.data) + ": " + this.options.formatY(series[i].value.y) + "\n";
+    }
+    var x_text = this.options.formatX(this.options.mergeXSeriesFnc(x_vals));
+    if(x_text)
+      text = x_text + "\n" + text;
+    return text;
+  }
+  
   
   /*
    * "Borrowed" from https://stackoverflow.com/a/29018745/4830897
@@ -72,73 +92,68 @@
       return m - 1;
   }
   
-  /* Merge functions get the two nearest points and should return
-   * SVG point elements (which can then be highlighted) and one value
-   * to show in the tooltip.
-   * Params: left, right = {svg:SVG point, data: Point object (Should be {x:.., y:...})}, point = mouse position relative to graph
-   * Returns: [ [svg points to add options.tooltipHighlightPointClass class to], data point]
-   */
-  // TODO: use object instead of arrays as return value
-  var merge_functions = {
-      left: function(left, right, point){
-        if(!left) left = right;
-        return [[left.svg], left.data];
-      },
-      right: function(left, right, point){
-        if(!right) right = left;
-        return [[right.svg], right.data];
-      },
-      nearest: function(left, right, point){
-        if(!left) return [[right.svg], right.data];
-        if(!right) return [[left.svg], left.data];
-        if(Math.abs(left.svg.attr('x1') - point) < Math.abs(right.svg.attr('x1') - point))
-          return [[left.svg], left.data];
-        return [[right.svg], right.data]
-      },
-      // TODO: interpolate
-  }
-  
-  /*
-   * The default display function.
-   * If the return value != null use it as textContent (!) for the tooltip.
-   * Use the tooltip parameter if you want to write/update HTML.
-   */
-  function default_tooltip_display(series, tooltip){
-    var x_vals = [];
-    var text = "";
-    for(var i=0; i < series.length; ++i){
-      x_vals.push(series[i].value.x);
-      text += this.tooltipNameFormat(series[i]) + ": " + this.tooltipFormatX(series[i].value.y) + "\n";
-    }
-    text = this.tooltipFormatY(this.tooltipMergeXSeries(x_vals)) + "\n" + text;
-    return text;
-  }
-  
+
   
   Chartist.plugins = Chartist.plugins || {};
   Chartist.plugins.Tooltips_flex = function(options) {
     options = Chartist.extend({}, defaultOptions, options);
-    // This is a bit strange but allows the display func to use the formatter functions
-    options.tooltipDisplayFnc = options.tooltipDisplayFnc.bind(options);
     
-    return function tooltips_flex(chart) {
+    var plugin = function tooltips_flex(chart) {
+      var tooltip = document.body.querySelector(options.tooltipClass);
       var chart_container = chart.container;
-      var tooltip = document.body.querySelector('.chartist-tooltip-flex');
-      var marker = null;
-      var marker_y = null;
-      var width = 0, height = 0;
-    
+      var svg = null;
       var series = [];
       var created = false;
-      var old_sel_points = [];
-      var tooltipMergeFnc = options.tooltipMergeFnc;
+      var marker = null, marker_y = null;
+      var axis_x = null, axis_y = null; 
+      
+      options.displayFnc = options.displayFnc.bind(plugin);
+      plugin.options = options;
+      
+      /* 
+       * Merge functions get the two nearest points for a series and should return
+       * one point. One of left or right could be null.
+       */
+      var merge_functions = plugin.merge_functions = {
+          left: function(left, right, point){
+            if(!left) left = right;
+            return left;
+          },
+          right: function(left, right, point){
+            if(!right) right = left;
+            return right;
+          },
+          nearest: function(left, right, point){
+            if(!left) return right;
+            if(!right) return left;
+            point = project(point);
+            if(Math.abs(left.x - point) < Math.abs(right.x - point))
+              return left;
+            return right;
+          },
+          interpolate: function(left, right, point){
+            if(!left) return right;
+            if(!right) return left;
+            point = project(point);
+            var ns = (right.x - left.x);
+            var ls = Math.abs(left.x - point) / ns;
+            var rs = Math.abs(right.x - point) / ns;
+            return {
+              x: point,
+              y: right.y * ls + left.y * rs
+            }
+          },
+      }
+
+      var width = 0, height = 0;    
+      var tooltipMergeFnc = options.mergeFnc;
       if(typeof tooltipMergeFnc !== "function"){
         tooltipMergeFnc = merge_functions[tooltipMergeFnc];
       }
       
       if(!tooltip){
         tooltip = document.createElement('div');
-        tooltip.className = options.tooltipTooltipClass;
+        tooltip.className = options.tooltipClass;
         // Fallback CSS so its at least visible without the css file.
         tooltip.style.position = 'absolute';
         tooltip.style.whiteSpace = 'pre';
@@ -155,9 +170,9 @@
         var data = elements.data.data;
         var right = null;
         i = Math.max(0, i);
-        var left = {svg: elements.svg[i], data: data[i]};
+        var left = data[i];
         if(i+1 < data.length){
-          right = {svg: elements.svg[i+1], data: data[i+1]}
+          right = data[i+1]
         }
         return [left, right];
       }
@@ -168,77 +183,46 @@
       function update(){
         rafQueued = false;
         if(!_tooltip_visible) _show_tooltip();
-        // getBoundingClientRect call required in case the graph position changes.
-        // I'd really like to get rid of this, but then we'd need to have the tooltip relative to the graph.
-        // TODO: as graph container child or as foreign svg object ? .. Still required to get the correct mouse_x ..
-        // TODO: try to cache it.. when to update ?
-        var cont_box = chart.container.getBoundingClientRect();
-        var left_border = cont_box.left + window.pageXOffset;
-        var mouse_x = last_event.pageX - left_border;
-        var mouse_y = null;
-        if(options.tooltipMarkerY){
-          mouse_y = last_event.pageY - (cont_box.top + window.pageYOffset);
-        }
-        
+        var svg_pos = transformToSVG(last_event.pageX, last_event.pageY);
         var values = [];
-        var vals_y = [];
         var highlightsToAdd = [];
         for(var i=0; i < series.length; ++i){
-          var points = get_nearest_points(series[i], mouse_x);
-          points = tooltipMergeFnc(points[0], points[1], mouse_x)
-          values.push({value: points[1], name: series[i].data.name});
-          var pToHighlight = points[0];
-          for(var j=0; j < pToHighlight.length; ++j){
-            var node = pToHighlight[j].getNode();
-            highlightsToAdd.push(node);
-            vals_y.push(node.getAttribute('y1'));
-          }
+          var points = get_nearest_points(series[i], svg_pos.x);
+          points = tooltipMergeFnc(points[0], points[1], svg_pos.x);
+          values.push({value: points, series: series[i]});
         }
         
-        var ret = options.tooltipDisplayFnc(values, tooltip);
+        var ret = options.displayFnc(values, tooltip);
         if(ret){
           tooltip.textContent = ret;          
         }
         height = tooltip.offsetHeight;
         width = tooltip.offsetWidth;
         var offsetX = - width / 2 + options.tooltipOffset.x;
-        var y = last_event.pageY;
-        if(options.tooltipFollowMaxLine){
-          y = Math.min.apply(Math, vals_y) + cont_box.top + window.pageYOffset - options.tooltipTooltipYDist;
-        }
         var offsetY = - height + options.tooltipOffset.y;
         
         /*
         * Try to do all the dom changing at once to limit relayouts.
         */
-        //tooltip.style.top = y + offsetY + 'px';
-        //tooltip.style.left = event.pageX + offsetX + 'px';
-        // Not really sure this one is faster
-        tooltip.style.transform = 'translate(' + (last_event.pageX + offsetX) + 'px, ' + (y + offsetY) + 'px)';
-        marker.getNode().setAttribute('transform', 'translate('+mouse_x+' 0)');
-        if(options.tooltipMarkerY){
-          //mouse_y = Math.min.apply(Math, vals_y); // + cont_box.top + window.pageYOffset;
-          marker_y.getNode().setAttribute('transform', 'translate(0 '+mouse_y+')');
+        tooltip.style.transform = 'translate(' + (last_event.pageX + offsetX) + 'px, ' + (last_event.pageY + offsetY) + 'px)';
+        marker.getNode().setAttribute('transform', 'translate('+svg_pos.x+' 0)');
+        if(options.markerY){
+          marker_y.getNode().setAttribute('transform', 'translate(0 '+svg_pos.y+')');
         }
-        if(options.tooltipHighlightPoint){          
-          // clean up old highlights
-          for(var i=0; i < old_sel_points.length; ++i){
-            old_sel_points[i].classList.remove(options.tooltipHighlightPointClass);
-          }
-          old_sel_points = [];
-          // and add new
-          for(var i=0; i < highlightsToAdd.length; ++i){             
-            highlightsToAdd[i].classList.add(options.tooltipHighlightPointClass);
-            old_sel_points.push(highlightsToAdd[i]);
+        if(options.highlightPoint){
+          for(var i=0; i < values.length; ++i){
+            var p = values[i].value;
+            values[i].series.point.getNode().setAttribute('transform', 'translate('+unProjectX(p.x)+' '+unProjectY(p.y)+')');
           }
         }
       }
-      
+
+
       
       function _show_tooltip(){
         tooltip.classList.add('tooltip-show');
         marker.addClass('tooltip-show');
-        if(options.tooltipMarkerY){
+        if(options.markerY){
           marker_y.addClass('tooltip-show');
         }
         _tooltip_visible = true;
@@ -250,7 +234,7 @@
       chart_container.addEventListener('mouseleave', function (event) {
         tooltip.classList.remove('tooltip-show');
         marker.removeClass('tooltip-show');
-        if(options.tooltipMarkerY){
+        if(options.markerY){
           marker_y.removeClass('tooltip-show');
         }
       });
@@ -270,42 +254,94 @@
       
       if (chart instanceof Chartist.Line) {
         chart.on('created', function(data) {
+          //console.log("DATA:", data);
+          axis_x = data.axisX;
+          axis_y = data.axisY;
+          
+          var svgElement = chart.svg.getNode();
+          svg = svgElement.tagName === 'svg' ? svgElement : svgElement.ownerSVGElement;
+          
+          // TODO: there is prob. a nicer function inside chartist already for this.
+          // TODO: investigate and get rid of grid requirement.
           var grid = chart.svg.querySelector('.ct-grids');
           var grid_box = grid.getNode().getBoundingClientRect();
           var cont_box = chart.container.getBoundingClientRect();
           var top_padding = grid_box.top - cont_box.top;
-          marker = chart.svg.elem('line', {x1: 0, y1: top_padding, x2: 0, y2: grid_box.height + top_padding, style: options.tooltipMarkerClass}, options.tooltipMarkerClass );
-          if(options.tooltipMarkerY){            
+          marker = chart.svg.elem('line', {x1: 0, y1: top_padding, x2: 0, y2: grid_box.height + top_padding, style: options.markerClass}, options.markerClass );
+          if(options.markerY){            
             var left_padding = grid_box.left - cont_box.left;
-            marker_y = chart.svg.elem('line', {x1: left_padding, y1: 0, x2: grid_box.width + left_padding, y2: 0, style: options.tooltipMarkerClass}, options.tooltipMarkerClass );
+            marker_y = chart.svg.elem('line', {x1: left_padding, y1: 0, x2: grid_box.width + left_padding, y2: 0, style: options.markerClass}, options.markerClass );
           }
           
           series = [];
           var series_data = chart.data.series;
-          console.log(chart);
           for(var i=0; i < series_data.length; ++i){
-            var series_name = series_data[i].className;
-            // We are (ab)using the points here. Alternatively we could use the lines values.
-            // Series not always have the classname attribute so fall back to using the name.
-            if(!series_name){
-              series_name = '[*|series-name="'+series_data[i].name+'"]';
-            } else{
-              series_name = "." + series_name;
+            var data = [];
+            var raw_x_data = [];
+            var series_name = series_data[i].className ? "."+series_data[i].className : '[*|series-name="'+series_data[i].name+'"]';
+            var elem = chart.svg.querySelector(series_name);
+            for(var j=0; j < series_data[i].data.length; ++j){
+              raw_x_data.push(unProjectX(series_data[i].data[j].x, axis_x));
+            }            
+            var d = {data: series_data[i], raw_x: raw_x_data, svg: elem};
+            if(options.highlightPoint){
+              d.point = elem.elem('line', {x1: 0, y1: 0, x2: 0.01, y2: 0}, chart.options.classNames.point + ' ' + options.highlightPointClass);
             }
-            var elem = chart.svg.querySelectorAll(series_name + ' .ct-point').svgElements;
-            var raw_x = [];
-            // Create raw x value array to increase search performance
-            for(var j=0; j < elem.length; ++j){
-              raw_x.push(elem[j].attr('x1'));
-            }
-            var d = {data: series_data[i], raw_x: raw_x, svg: elem};
             series.push(d);
+            //console.log(d);
           }
           created = true;
         });
       }
+      
+      /*
+       * Transforms screen coordinates into svg coordinates 
+       */
+      var _point = null;
+      function transformToSVG(x, y) {
+        var matrix = svg.getScreenCTM();
+        var point = _point || svg.createSVGPoint();
+        point.x = x;
+        point.y = y;
+        point = point.matrixTransform(matrix.inverse());
+        return point || { x: 0, y: 0 };
+      }
+      
+      /*
+       * Transforms x data value to svg position. 
+       */
+      function unProjectX(value) {
+        var bounds = axis_x.bounds || axis_x.range;
+        var max = bounds.max;
+        var min = bounds.min;
+        var range = bounds.range || (max - min);
+        return (axis_x.axisLength / range) * (value - min) + axis_x.chartRect.x1;
+      }
+      
+      /*
+       * Transforms y data value to svg position. 
+       */
+      function unProjectY(value) {
+        var bounds = axis_y.bounds || axis_y.range;
+        var max = bounds.max;
+        var min = bounds.min;
+        var range = bounds.range || (max - min);
+        return axis_y.chartRect.y1 - (axis_y.axisLength / range) * (value - min);
+      }
+      
+      /*
+       * Transforms x svg position to x data value.. 
+       */
+      function project(value) {
+        var bounds = axis_x.bounds || axis_x.range;
+        var max = bounds.max;
+        var min = bounds.min;
+        var range = bounds.range || (max - min);
+        return ((value - axis_x.chartRect.x1) * bounds.range / axis_x.axisLength) + min;
+      }
+      
+      
     };
+    return plugin;
   };
-  Chartist.plugins.Tooltips_flex.mergeFunctions = merge_functions;
-  Chartist.plugins.Tooltips_flex.defaultOptions = defaultOptions;
 }(window, document, Chartist));

@@ -3,6 +3,7 @@
 This is a plugin for Chartist.js that will display a tooltip when hovering over line graphs.  
 It supports interpolation when hovvering between data points (well currently the nearest point is taken, but configurable).  
 Works on mobile browser (only tested on firefox and chrome on android).  
+Supports Chartist.AutoScaleAxis and Chartist.FixedScaleAxis.
 
 
 ## Available options and their defaults
@@ -62,8 +63,4 @@ var chart = new Chartist.Line('.ct-chart', {
 
 ## Limitations and requirements
 
-- Series need to have a name attribute.
-- Series data need to be in the {x:.., y:..} format (might get fixed some day).
-- Chartists showPoint option need to be true. Hide the points via CSS if required.
 - This plugin isn't stable yet (and maybe never will). Options and functionality might change.
-- Does not work when data is updated (probably). Should be an easy fix tho.
